@@ -18,15 +18,61 @@ from backend.llm.prompts import SYSTEM_PROMPT, build_user_prompt
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
+def _clean_llm_json(text: str) -> str:
+    """
+    Fix common issues local models produce when asked for JSON:
+    1. Markdown code fences  (```json ... ``` or ``` ... ```)
+    2. Trailing commas before } or ]  (invalid JSON, common in Llama/Mistral)
+    3. Single-quoted strings  (Python-style, not valid JSON)
+    4. Python literals True/False/None instead of true/false/null
+    """
+    # Strip markdown code fences
+    text = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.IGNORECASE)
+    text = re.sub(r"\s*```$", "", text.strip())
+
+    # Remove trailing commas before closing brace/bracket
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+
+    # Replace Python bool/None literals
+    text = re.sub(r"\bTrue\b", "true", text)
+    text = re.sub(r"\bFalse\b", "false", text)
+    text = re.sub(r"\bNone\b", "null", text)
+
+    return text.strip()
+
+
 def _parse_llm_json(raw_text: str) -> dict:
+    """
+    Attempt to parse JSON from LLM output, with progressive fallbacks to
+    handle common formatting issues from local models.
+    """
     text = raw_text.strip()
+
+    # Attempt 1: parse as-is
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", text, re.DOTALL)
-        if m:
-            return json.loads(m.group(0))
-        raise HTTPException(status_code=502, detail="LLM returned non-JSON response")
+        pass
+
+    # Attempt 2: clean up common local model issues then parse
+    cleaned = _clean_llm_json(text)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    # Attempt 3: extract the outermost {...} block and clean that
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if m:
+        try:
+            return json.loads(_clean_llm_json(m.group(0)))
+        except json.JSONDecodeError:
+            pass
+
+    raise HTTPException(
+        status_code=502,
+        detail="LLM returned malformed JSON. Try a different model or provider.",
+    )
 
 
 def _build_enriched_output(data: dict, analysis: TheoryAnalysis, input_tab: str) -> EnrichedOutput:

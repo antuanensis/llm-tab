@@ -11,7 +11,12 @@ Given a structured music-theory analysis of a guitar tab, you will produce a ric
 in the following JSON format. Be accurate, clear, and engaging. Vary the depth: the beginner summary \
 should be friendly and avoid jargon; the theory_deep_dive should be insightful and technically precise.
 
-Respond ONLY with valid JSON matching this exact schema (no markdown fences, no extra keys):
+Respond ONLY with valid JSON matching this exact schema. Rules:
+- No markdown code fences (no ```)
+- No trailing commas
+- Double quotes only (no single quotes)
+- No comments inside the JSON
+- No extra keys outside the schema
 
 {
   "beginner_summary": "<2-4 sentences, plain language, what this progression feels like and how to practice it>",
